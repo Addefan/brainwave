@@ -1,35 +1,20 @@
-import telebot
+from os import environ
 import sqlite3
+import telebot
 from telebot import types
+from dotenv import load_dotenv
+from services import user_registation, date_to_timestamp, date_view, \
+    date_validation, number_validation, get_input_error_text
 
-bot = telebot.TeleBot('5173892002:AAEXXEpJsRRjIUeRdTqLLTwdBLLvpMXo4Mo')
+load_dotenv()
+
+TELEGRAM_BOT_TOKEN = environ.get("TELEGRAM_BOT_TOKEN")
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    # Подключение (создание) к db и создание таблицы users
-    connect = sqlite3.connect('project.db')
-    cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS users(
-        userid INTEGER PRIMARY KEY 
-    )""")
-    connect.commit()
-
-    # "Регистрация" пользователя: добавление id в db, если он не был добавлен ранее,
-    # приветственное сообщение
-    user_id = message.chat.id
-    cursor.execute(f"SELECT userid FROM users WHERE userid = {user_id}")
-    data = cursor.fetchone()
-    if data is None:
-        user_id = (user_id,)
-        cursor.execute("INSERT INTO users VALUES(?);", user_id)
-        connect.commit()
-        bot.send_message(message.chat.id,
-                         'Привет, я твой ассистент! Расскажи мне свое расписание и задания, а я помогу тебе с правильным распределением времемни')
-    else:
-        bot.send_message(message.chat.id, "Вы уже зарегистрированы!")
-    cursor.close()
-
+    user_registation(message)
     startKBoart = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
     timetable = types.KeyboardButton(text='Расписание')
     task = types.KeyboardButton(text='Задания')
@@ -37,54 +22,48 @@ def start(message):
     bot.send_message(message.chat.id, 'Что вы хотите сделать?', reply_markup=startKBoart)
 
 
-'''Timetable'''
-
-
-@bot.message_handler(regexp="Расписание")
-def plan(message):
+@bot.message_handler(func=lambda message: message.text == "Расписание")
+def display_schedule_buttons(message):
     startKBoart = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
-    removal = types.KeyboardButton(text='Удалить событие из расписания')
+    removal = types.KeyboardButton(text='Удалить событие из рaсписания')
     adding = types.KeyboardButton(text='Добавить событие в расписание')
     view = types.KeyboardButton(text='Посмотреть расписание')
     startKBoart.add(removal, adding, view)
     bot.send_message(message.chat.id, 'Каков будет следующий шаг?)', reply_markup=startKBoart)
 
 
-@bot.message_handler(regexp="Удалить событие из расписания")
+@bot.message_handler(regexp="Удалить событие из рaсписания")
 def remove_event(message):
-    sent = bot.reply_to(message, 'Введите дату, в какой день хотите удалить событие. \n ДД.ММ.ГГ')
-    bot.register_next_step_handler(sent, remove_timetable)
+    sent = bot.reply_to(message, 'Введите дату, на какой день хотите удалить событие.\nДД.ММ.ГГГГ')
+    bot.register_next_step_handler(sent, remove_event_helper)
 
 
-def remove_timetable(message):
+def remove_event_helper(message):
     message_to_save = message.text
 
 
 @bot.message_handler(regexp="Добавить событие в расписание")
 def add_event(message):
-    sent = bot.reply_to(message, 'Введите дату, в какой день хотите добавить событие. \n ДД.ММ.ГГ')
-    bot.register_next_step_handler(sent, add_timetable)
+    sent = bot.reply_to(message, 'Введите дату, на какой день хотите добавить событие.\nДД.ММ.ГГГГ')
+    bot.register_next_step_handler(sent, add_event_helper)
 
 
-def add_timetable(message):
+def add_event_helper(message):
     message_to_save = message.text
 
 
 @bot.message_handler(regexp="Посмотреть расписание")
-def view_plan(message):
-    sent = bot.reply_to(message, 'Введите дату, на какой день хотите посмотреть расписание. \n ДД.ММ.ГГ')
-    bot.register_next_step_handler(sent, view_timetable)
+def view_schedule(message):
+    sent = bot.reply_to(message, 'Введите дату, на какой день хотите посмотреть расписание.\nДД.ММ.ГГГГ')
+    bot.register_next_step_handler(sent, view_schedule_helper)
 
 
-def view_timetable(message):
+def view_schedule_helper(message):
     message_to_save = message.text
 
 
-'''Tssks'''
-
-
-@bot.message_handler(regexp="Задания")
-def plan(message):
+@bot.message_handler(func=lambda message: message.text == "Задания")
+def display_tasks_buttons(message):
     startKBoart = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True, one_time_keyboard=True)
     removal = types.KeyboardButton(text='Удалить задание')
     adding = types.KeyboardButton(text='Добавить задание')
@@ -96,22 +75,20 @@ def plan(message):
 @bot.message_handler(regexp="Удалить задание")
 def remove_task(message):
     sent = bot.reply_to(message, 'Введите номер удаляемого задания')
-    bot.register_next_step_handler(sent, remove)
+    bot.register_next_step_handler(sent, remove_task_helper)
 
 
-def remove(message):
-    message_to_save = message.text
+def remove_task_helper(message):
+    number = message.text
 
     # Валидация введённых данных
-    try:
-        message_to_save = int(message_to_save)
-    except ValueError:
-        bot.send_message(message.chat.id,
-                         "Извините, вы ввели данные в неправильном формате. Пожалуйста, попробуйте ещё раз")
+    if not number_validation(number):
+        bot.send_message(message.chat.id, get_input_error_text())
+        return
 
     connect = sqlite3.connect('project.db')
     cursor = connect.cursor()
-    cursor.execute(f"DELETE FROM tasks WHERE counter = {message_to_save}")
+    cursor.execute(f"DELETE FROM tasks WHERE id = {number}")
     connect.commit()
     connect.close()
 
@@ -120,40 +97,32 @@ def remove(message):
 
 @bot.message_handler(regexp="Добавить задание")
 def add_task(message):
-    sent = bot.reply_to(message, 'Введите задание и его дедлайн. \n Задание - ДД.ММ.ГГ')
-    bot.register_next_step_handler(sent, add)
+    sent = bot.reply_to(message, 'Введите задание и его дедлайн.\nЗадание - ДД.ММ.ГГГГ')
+    bot.register_next_step_handler(sent, add_task_helper)
 
 
-def add(message):
+def add_task_helper(message):
     message_to_save = message.text
-    description, deadline = message_to_save[:-9], message_to_save[-8:]
-    day_month_year = deadline.split('.')
+    description, deadline = message_to_save[:-11], message_to_save[-10:]
 
-    # Валидация введёных данных
-    if not (isinstance(description, str) and all(len(x) == 2 for x in day_month_year) and len(day_month_year) == 3):
-        bot.send_message(message.chat.id,
-                         "Извините, вы ввели данные в неправильном формате. Пожалуйста, попробуйте ещё раз")
-        return
-    try:
-        day_month_year = map(int, day_month_year)
-    except ValueError:
-        bot.send_message(message.chat.id,
-                         "Извините, вы ввели данные в неправильном формате. Пожалуйста, попробуйте ещё раз")
+    # Валидация введённых данных
+    if not date_validation(deadline):
+        bot.send_message(message.chat.id, get_input_error_text())
         return
 
     # Соединение с db и создание таблицы tasks
     connect = sqlite3.connect('project.db')
     cursor = connect.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS tasks(
-            counter INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             description TEXT,
-            deadline TEXT,
+            deadline TIMESTAMP,
             userid INTEGER
         )""")
     connect.commit()
 
     # Добавление задания в db
-    task = (description, deadline, message.chat.id)
+    task = description, date_to_timestamp(deadline), message.chat.id
     cursor.execute("INSERT INTO tasks VALUES(null, ?, ?, ?);", task)
     connect.commit()
     connect.close()
@@ -162,32 +131,21 @@ def add(message):
 
 
 @bot.message_handler(regexp="Посмотреть задания")
-def view_plan(message):
-    sent = bot.reply_to(message, 'Введите дату, до какого дня вывести задания. \n ДД.ММ.ГГ')
-    bot.register_next_step_handler(sent, view)
+def view_tasks(message):
+    sent = bot.reply_to(message, 'Введите дату, до какого дня вывести задания.\nДД.ММ.ГГГГ')
+    bot.register_next_step_handler(sent, view_tasks_helper)
 
 
-def date_to_days(date):
-    if isinstance(date, str):
-        date = list(map(int, date.split('.')))
-    return 365 * date[2] + 30 * date[1] + date[0]
-
-
-def view(message):
+def view_tasks_helper(message):
     message_to_save = message.text
-    date = message_to_save.split('.')
+    description, deadline = message_to_save[:-11], message_to_save[-10:]
 
     # Валидация введённых данных
-    if not (all(len(x) == 2 for x in date) and len(date) == 3):
-        bot.send_message(message.chat.id,
-                         "Извините, вы ввели данные в неправильном формате. Пожалуйста, попробуйте ещё раз")
-    try:
-        date = list(map(int, date))
-    except ValueError:
-        bot.send_message(message.chat.id,
-                         "Извините, вы ввели данные в неправильном формате. Пожалуйста, попробуйте ещё раз")
+    if not date_validation(deadline):
+        bot.send_message(message.chat.id, get_input_error_text())
+        return
 
-    date = date_to_days(date)
+    date = date_to_timestamp(deadline)
 
     connect = sqlite3.connect('project.db')
     cursor = connect.cursor()
@@ -196,8 +154,8 @@ def view(message):
     tasks = cursor.fetchall()
     out = ''
     for task in tasks:
-        if date >= date_to_days(task[2]):
-            out += f'{task[0]}. {task[1]} (до {task[2]})\n'
+        if int(date) >= task[2]:
+            out += f'{task[0]}. {task[1]} (до {date_view(task[2])})\n'
     if out == '':
         bot.send_message(message.chat.id, "Нет заданий до указанного дедлайна!")
     else:
@@ -212,9 +170,11 @@ def delete(message):
     cursor = connect.cursor()
     user_id = message.chat.id
     cursor.execute(f"DELETE FROM users WHERE userid = {user_id}")
+    cursor.execute(f"DELETE FROM tasks WHERE userid = {user_id}")
     connect.commit()
     bot.send_message(message.chat.id, "Спасибо, что использовали нашего бота!")
     cursor.close()
 
 
+print('Bot started working...')
 bot.polling()
