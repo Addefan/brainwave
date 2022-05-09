@@ -1,4 +1,5 @@
 from os import environ
+from datetime import timedelta
 import sqlite3
 import telebot
 from telebot import types
@@ -8,8 +9,9 @@ from services import user_registration, date_to_timestamp, date_view, \
     request_enter_deadline_date_for_tasks, get_text_no_tasks_until_deadline, \
     get_text_successfully_adding_task, get_text_successfully_deletion_task, \
     request_enter_task_and_deadline, request_enter_number_task, request_enter_date_to_view_schedule, \
-    request_enter_date_to_add_event, request_enter_date_to_delete_event, create_counter, \
-    get_test_no_tasks
+    request_enter_event_and_date_to_add, request_enter_date_to_delete_event, create_counter, \
+    get_test_no_tasks, request_enter_type_and_period, event_type_validation, \
+    get_text_successfully_adding_event
 
 load_dotenv()
 
@@ -49,12 +51,70 @@ def remove_event_helper(message):
 
 @bot.message_handler(regexp="Добавить событие в расписание")
 def add_event(message):
-    sent = bot.reply_to(message, request_enter_date_to_add_event())
-    bot.register_next_step_handler(sent, add_event_helper)
+    sent = bot.reply_to(message, request_enter_event_and_date_to_add())
+    bot.register_next_step_handler(sent, first_add_event_helper)
 
 
-def add_event_helper(message):
+def first_add_event_helper(message):
     message_to_save = message.text
+    description, start_date, end_date = message_to_save[:-23], message_to_save[-22:-6], \
+                                        message_to_save[-22:-11] + message_to_save[-5:]
+
+    # Валидация введённых данных
+    if not date_validation(start_date):
+        bot.send_message(message.chat.id, get_input_error_text())
+        return
+    if not date_validation(end_date):
+        bot.send_message(message.chat.id, get_input_error_text())
+        return
+
+    sent = bot.reply_to(message, request_enter_type_and_period())
+    bot.register_next_step_handler(sent, second_add_event_helper, description, start_date, end_date)
+
+
+def second_add_event_helper(message, description, start_date, end_date):
+    message_to_save = message.text
+    event_type = message_to_save[:1]
+    if event_type == 'п':
+        period = message_to_save[2:]
+
+    # Валидация введённых данных
+    if not event_type_validation(event_type):
+        bot.send_message(message.chat.id, get_input_error_text())
+        return
+    if event_type == 'п':
+        if not number_validation(period):
+            bot.send_message(message.chat.id, get_input_error_text())
+            return
+
+    # Соединение с db и создание таблицы events
+    connect = sqlite3.connect("project.db")
+    cursor = connect.cursor()
+    cursor.execute("""CREATE TABLE IF NOT EXISTS events(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            description TEXT,
+            start_date TIMESTAMP,
+            end_date TIMESTAMP,
+            repeat BOOL,
+            period TIMESTAMP, 
+            user_id INTEGER
+        )""")
+    connect.commit()
+
+    # Добавление события в db
+    event_type = 1 if event_type == 'п' else 0
+    if event_type:
+        event = description, date_to_timestamp(start_date), date_to_timestamp(end_date), \
+                event_type, timedelta(int(period)).total_seconds(), message.chat.id
+        cursor.execute("INSERT INTO events VALUES(null, ?, ?, ?, ?, ?, ?);", event)
+    else:
+        event = description, date_to_timestamp(start_date), date_to_timestamp(end_date), \
+                event_type, message.chat.id
+        cursor.execute("INSERT INTO events VALUES(null, ?, ?, ?, ?, null, ?);", event)
+    connect.commit()
+    connect.close()
+
+    bot.send_message(message.chat.id, get_text_successfully_adding_event())
 
 
 @bot.message_handler(regexp="Посмотреть расписание")
@@ -82,7 +142,7 @@ def remove_task(message):
     connect = sqlite3.connect("project.db")
     cursor = connect.cursor()
     user_id = message.chat.id
-    cursor.execute(f"SELECT * FROM tasks WHERE userid = {user_id};")
+    cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
     tasks = cursor.fetchall()
     counter = create_counter()
     out = ""
@@ -109,7 +169,7 @@ def remove_task_helper(message):
     connect = sqlite3.connect("project.db")
     cursor = connect.cursor()
     user_id = message.chat.id
-    cursor.execute(f"SELECT * FROM tasks WHERE userid = {user_id};")
+    cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
     for _ in range(int(number)):
         task = cursor.fetchone()
     cursor.execute(f"DELETE FROM tasks WHERE description = '{task[1]}' AND deadline = {task[2]};")
@@ -141,7 +201,7 @@ def add_task_helper(message):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             description TEXT,
             deadline TIMESTAMP,
-            userid INTEGER
+            user_id INTEGER
         )""")
     connect.commit()
 
@@ -174,8 +234,8 @@ def view_tasks_helper(message):
     connect = sqlite3.connect("project.db")
     cursor = connect.cursor()
     user_id = message.chat.id
-    cursor.execute(f"SELECT * FROM tasks WHERE userid = {user_id};")
-    tasks = sorted(cursor.fetchall(), key=lambda x: x[2])
+    cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
+    tasks = cursor.fetchall()
     counter = create_counter()
     out = ""
     for task in tasks:
@@ -190,12 +250,19 @@ def view_tasks_helper(message):
 
 @bot.message_handler(commands=["delete"])
 def delete(message):
-    # "Удаление" пользователя: удаление id пользователя из списка
+    # "Удаление" пользователя: удаление всех данных, связанных с id пользователя
     connect = sqlite3.connect("project.db")
     cursor = connect.cursor()
     user_id = message.chat.id
-    cursor.execute(f"DELETE FROM users WHERE userid = {user_id}")
-    cursor.execute(f"DELETE FROM tasks WHERE userid = {user_id}")
+    cursor.execute(f"DELETE FROM users WHERE user_id = {user_id}")
+    try:
+        cursor.execute(f"DELETE FROM tasks WHERE user_id = {user_id}")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute(f"DELETE FROM events WHERE user_id = {user_id}")
+    except sqlite3.OperationalError:
+        pass
     connect.commit()
     bot.send_message(message.chat.id, get_thanks_text())
     cursor.close()

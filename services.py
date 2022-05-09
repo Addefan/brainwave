@@ -59,6 +59,14 @@ def get_text_successfully_deletion_task():
     return "Задание успешно удалено!"
 
 
+def get_text_successfully_adding_event():
+    """
+    Получение текста о том, что событие добавлено
+    :return: str
+    """
+    return "Событие успешно добавлено!"
+
+
 def get_test_no_tasks():
     """
     Получение текста о том, что у пользователя нет заданий
@@ -80,7 +88,9 @@ def request_enter_task_and_deadline():
     Получение текста с просьбой ввести задание и его дедлайн
     :return: str
     """
-    return "Введите задание и его дедлайн.\nЗадание - ДД.ММ.ГГГГ"
+    return "Введите задание и его дедлайн.\n" \
+           "Задание ДД.ММ.ГГГГ\n\n" \
+           "Например, 💬 Сделать ДЗ по матану 10.05.2022"
 
 
 def request_enter_number_task():
@@ -99,12 +109,14 @@ def request_enter_date_to_view_schedule():
     return "Введите дату, на какой день хотите посмотреть расписание.\nДД.ММ.ГГГГ"
 
 
-def request_enter_date_to_add_event():
+def request_enter_event_and_date_to_add():
     """
     Получение текста с просьбой ввести дату, на которую нужно добавить событие
     :return: str
     """
-    return "Введите дату, на какой день хотите добавить событие.\nДД.ММ.ГГГГ"
+    return "Введите событие, дату, на какой день хотите его добавить и время начала и окончания события.\n" \
+           "ДД.ММ.ГГГГ чч:мм чч:мм\n\n" \
+           "Например, 💬 Матан (практика) 10.05.2022 08:30 10:00"
 
 
 def request_enter_date_to_delete_event():
@@ -113,6 +125,16 @@ def request_enter_date_to_delete_event():
     :return: str
     """
     return "Введите дату, на какой день хотите удалить событие.\nДД.ММ.ГГГГ"
+
+
+def request_enter_type_and_period():
+    """
+    Получение текста с просьбой ввести тип события и его период
+    :return: str
+    """
+    return "Введите тип события (единоразовое/повторяющееся) и период (в днях), если оно повторяющееся\n" \
+           "первая буква типа события ДД\n\n" \
+           "Например, 💬 п 7"
 
 
 def user_registration(message):
@@ -126,14 +148,14 @@ def user_registration(message):
     connect = sqlite3.connect('project.db')
     cursor = connect.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS users(
-            userid INTEGER PRIMARY KEY 
+            user_id INTEGER PRIMARY KEY 
         )""")
     connect.commit()
 
     # "Регистрация" пользователя: добавление id в db, если он не был добавлен ранее,
     # приветственное сообщение
     user_id = message.chat.id
-    cursor.execute(f"SELECT userid FROM users WHERE userid = {user_id}")
+    cursor.execute(f"SELECT user_id FROM users WHERE user_id = {user_id}")
     data = cursor.fetchone()
     if data is None:
         user_id = (user_id,)
@@ -151,7 +173,10 @@ def date_to_datetime(date):
     :param date: str - дата, введённая пользователем
     :return: datetime.datetime - дата в виде экземпляра класса
     """
-    return datetime.datetime.strptime(date, '%d.%m.%Y')
+    try:
+        return datetime.datetime.strptime(date, '%d.%m.%Y %H:%M')
+    except ValueError:
+        return datetime.datetime.strptime(date, '%d.%m.%Y')
 
 
 def date_to_timestamp(date):
@@ -199,6 +224,17 @@ def number_validation(number):
     if number < 1:
         return False
     return True
+
+
+def event_type_validation(event_type):
+    """
+    Валидация типа события, который ввёл пользователь
+    :param event_type: str - тип события, введённый пользователем
+    :return: bool - валиден тип или нет
+    """
+    if event_type == 'п' or event_type == 'е':
+        return True
+    return False
 
 
 def create_counter():
