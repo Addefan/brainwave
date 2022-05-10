@@ -10,8 +10,8 @@ from services import user_registration, date_to_timestamp, date_view, \
     get_text_successfully_adding_task, get_text_successfully_deletion_task, \
     request_enter_task_and_deadline, request_enter_number_task, request_enter_date_to_view_schedule, \
     request_enter_event_and_date_to_add, request_enter_date_to_delete_event, create_counter, \
-    get_test_no_tasks, request_enter_type_and_period, event_type_validation, \
-    get_text_successfully_adding_event
+    get_text_no_tasks, request_enter_type_and_period, event_type_validation, \
+    get_text_successfully_adding_event, get_text_no_events_on_this_day
 
 load_dotenv()
 
@@ -126,6 +126,30 @@ def view_schedule(message):
 def view_schedule_helper(message):
     message_to_save = message.text
 
+    # Валидация введённых данных
+    if not date_validation(message_to_save):
+        bot.send_message(message.chat.id, get_input_error_text())
+        return
+
+    connect = sqlite3.connect("project.db")
+    cursor = connect.cursor()
+    user_id = message.chat.id
+    begin_day = date_to_timestamp(message_to_save)
+    day_in_seconds = 86400
+    end_day = begin_day + day_in_seconds - 1
+    cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND start_date >= {begin_day} "
+                   f"AND start_date <= {end_day} ORDER BY start_date;")
+    events = cursor.fetchall()
+    counter = create_counter()
+    out = ""
+    for event in events:
+        out += f"{counter()}) {date_view(event[2], 'time')}-{date_view(event[3], 'time')} {event[1]}\n"
+    if out == "":
+        bot.send_message(message.chat.id, get_text_no_events_on_this_day())
+    else:
+        bot.send_message(message.chat.id, out)
+    cursor.close()
+
 
 @bot.message_handler(func=lambda message: message.text == "Задания")
 def display_tasks_buttons(message):
@@ -147,9 +171,10 @@ def remove_task(message):
     counter = create_counter()
     out = ""
     for task in tasks:
-        out += f"{counter()}. {task[1]} (до {date_view(task[2])})\n"
+        out += f"{counter()}. {task[1]} (до {date_view(task[2], 'date')})\n"
     if out == "":
-        bot.send_message(message.chat.id, get_test_no_tasks())
+        bot.send_message(message.chat.id, get_text_no_tasks())
+        return
     else:
         bot.send_message(message.chat.id, out)
     cursor.close()
@@ -240,7 +265,7 @@ def view_tasks_helper(message):
     out = ""
     for task in tasks:
         if int(date) >= task[2]:
-            out += f"{counter()}. {task[1]} (до {date_view(task[2])})\n"
+            out += f"{counter()}. {task[1]} (до {date_view(task[2], 'date')})\n"
     if out == "":
         bot.send_message(message.chat.id, get_text_no_tasks_until_deadline())
     else:
