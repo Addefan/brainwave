@@ -67,6 +67,22 @@ def get_text_successfully_adding_event():
     return "☑ Событие успешно добавлено!"
 
 
+def get_text_successfully_deletion_event():
+    """
+    Получение текста о том, что событие удалено
+    :return: str
+    """
+    return "☑ Событие успешно удалено!"
+
+
+def get_text_successfully_deletion_events():
+    """
+    Получение текста о том, что события удалены
+    :return: str
+    """
+    return "☑ События успешно удалены!"
+
+
 def get_text_no_tasks():
     """
     Получение текста о том, что у пользователя нет заданий
@@ -81,6 +97,14 @@ def get_text_no_events_on_this_day():
     :return: str
     """
     return "✖ У вас нет событий в выбранный день!"
+
+
+def get_text_limit_exceeded():
+    """
+    Получение текста о том, что нельзя запрашивать расписание более, чем на неделю вперед
+    :return: str
+    """
+    return "✖ Извините, вы можете смотреть расписание не более, чем на неделю вперёд"
 
 
 def request_enter_deadline_date_for_tasks():
@@ -109,6 +133,15 @@ def request_enter_number_task():
     :return: str
     """
     return "Введите номер удаляемого задания\n\n" \
+           "Например, 💬 1"
+
+
+def request_enter_number_event():
+    """
+    Получение текста с просьбой ввести номер удаляемого события
+    :return: str
+    """
+    return "Введите номер удаляемого события\n\n" \
            "Например, 💬 1"
 
 
@@ -150,6 +183,16 @@ def request_enter_type_and_period():
     return "Введите тип события (единоразовое/повторяющееся) и период (в днях), если оно повторяющееся\n" \
            "первая буква типа события ДД\n\n" \
            "Например, 💬 п 7"
+
+
+def request_enter_deletion_type():
+    """
+    Получение текста с просьбой указать, удалить событие только на этот день или полностью
+    :return: str
+    """
+    return "Введите, как нужно удалить событие: единоразово или полностью\n" \
+           "первая буква типа удаления\n\n" \
+           "Например, 💬 е"
 
 
 def user_registration(message):
@@ -196,11 +239,10 @@ def date_to_datetime(date):
 
 def date_to_timestamp(date):
     """
-    Функция, преобразовывающая дату, введённую пользователем в секунды от 01.01.1970
-    :param date: str - дата, введённая пользователем
+    Функция, преобразовывающая дату в секунды от 01.01.1970
+    :param date: datetime.datetime - дата в виде экземпляра класса
     :return: float - время в секундах
     """
-    date = date_to_datetime(date)
     return date.timestamp()
 
 
@@ -247,7 +289,7 @@ def number_validation(number):
     return True
 
 
-def event_type_validation(event_type):
+def event_and_deletion_type_validation(event_type):
     """
     Валидация типа события, который ввёл пользователь
     :param event_type: str - тип события, введённый пользователем
@@ -275,3 +317,52 @@ def create_counter():
         return i
 
     return foo
+
+
+def schedule_date_limitation(date):
+    """
+    Проверка, входит ли введённая пользователем дата расписания в одну неделю, считая от сегодняшнего дня
+    :param date: str - дата, введённая пользователем
+    :return: bool - входит или не входит
+    """
+    today = date_to_datetime(date_view(datetime.datetime.today().timestamp(), 'date'))
+    end = today + datetime.timedelta(days=7)
+    if today <= date_to_datetime(date) < end:
+        return True
+    return False
+
+
+def create_tasks_table():
+    """
+    Создание таблицы tasks в БД
+    :return: None
+    """
+    connect = sqlite3.connect("project.db")
+    cursor = connect.cursor()
+    cursor.execute("""CREATE TABLE IF NOT EXISTS tasks(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            description TEXT,
+            deadline TIMESTAMP,
+            user_id INTEGER
+        )""")
+    connect.commit()
+    connect.close()
+
+
+def create_events_table():
+    """
+    Создание таблицы events в БД
+    :return: None
+    """
+    connect = sqlite3.connect("project.db")
+    cursor = connect.cursor()
+    cursor.execute("""CREATE TABLE IF NOT EXISTS events(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            description TEXT,
+            start_date TIMESTAMP,
+            end_date TIMESTAMP,
+            period TIMESTAMP, 
+            user_id INTEGER
+        )""")
+    connect.commit()
+    connect.close()
