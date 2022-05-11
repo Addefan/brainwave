@@ -2,6 +2,7 @@ from os import environ
 import sqlite3
 import datetime
 import telebot
+from telebot import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -114,7 +115,7 @@ def request_enter_deadline_date_for_tasks():
     """
     return "Введите дату, до какого дня вывести задания.\n" \
            "ДД.ММ.ГГГГ\n\n" \
-           "Например, 💬 10.05.2022"
+           f"Например, 💬 {datetime.date.today().strftime('%d.%m.%Y')}"
 
 
 def request_enter_task_and_deadline():
@@ -124,7 +125,7 @@ def request_enter_task_and_deadline():
     """
     return "Введите задание и его дедлайн.\n" \
            "Задание ДД.ММ.ГГГГ\n\n" \
-           "Например, 💬 Сделать ДЗ по матану 10.05.2022"
+           f"Например, 💬 Сделать ДЗ по матану {datetime.date.today().strftime('%d.%m.%Y')}"
 
 
 def request_enter_number_task():
@@ -152,7 +153,7 @@ def request_enter_date_to_view_schedule():
     """
     return "Введите дату, на какой день хотите посмотреть расписание.\n" \
            "ДД.ММ.ГГГГ\n\n" \
-           "Например, 💬 10.05.2022"
+           f"Например, 💬 {datetime.date.today().strftime('%d.%m.%Y')}"
 
 
 def request_enter_event_and_date_to_add():
@@ -160,9 +161,10 @@ def request_enter_event_and_date_to_add():
     Получение текста с просьбой ввести дату, на которую нужно добавить событие
     :return: str
     """
-    return "Введите событие, дату, на какой день хотите его добавить и время начала и окончания события.\n" \
+    return "Введите событие, дату, на какой день хотите его добавить " \
+           "и время начала и окончания события.\n" \
            "ДД.ММ.ГГГГ чч:мм чч:мм\n\n" \
-           "Например, 💬 Матан (практика) 10.05.2022 08:30 10:00"
+           f"Например, 💬 Матан (практика) {datetime.date.today().strftime('%d.%m.%Y')} 08:30 10:00"
 
 
 def request_enter_date_to_delete_event():
@@ -172,7 +174,7 @@ def request_enter_date_to_delete_event():
     """
     return "Введите дату, на какой день хотите удалить событие.\n" \
            "ДД.ММ.ГГГГ\n\n" \
-           "Например, 💬 10.05.2022"
+           f"Например, 💬 {datetime.date.today().strftime('%d.%m.%Y')}"
 
 
 def request_enter_type_and_period():
@@ -180,7 +182,8 @@ def request_enter_type_and_period():
     Получение текста с просьбой ввести тип события и его период
     :return: str
     """
-    return "Введите тип события (единоразовое/повторяющееся) и период (в днях), если оно повторяющееся\n" \
+    return "Введите тип события (единоразовое/повторяющееся) " \
+           "и период (в днях), если оно повторяющееся\n" \
            "первая буква типа события ДД\n\n" \
            "Например, 💬 п 7"
 
@@ -197,21 +200,15 @@ def request_enter_deletion_type():
 
 def user_registration(message):
     """
-    Регистрация пользователя: создание таблицы с пользователями (если не существовала),
-    добавление в неё пользователя (если не был добавлен ранее), приветственное сообщение
+    Регистрация пользователя: добавление в таблицу users пользователя
+    (если не был добавлен ранее), приветственное сообщение
     :param message: Message - вся информация о полученном сообщении
     :return: None
     """
-    # Подключение (создание) к db и создание таблицы users
+    create_users_table("project.db")
+
     connect = sqlite3.connect('project.db')
     cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS users(
-            user_id INTEGER PRIMARY KEY 
-        )""")
-    connect.commit()
-
-    # "Регистрация" пользователя: добавление id в db, если он не был добавлен ранее,
-    # приветственное сообщение
     user_id = message.chat.id
     cursor.execute(f"SELECT user_id FROM users WHERE user_id = {user_id}")
     data = cursor.fetchone()
@@ -295,7 +292,7 @@ def event_and_deletion_type_validation(event_type):
     :param event_type: str - тип события, введённый пользователем
     :return: bool - валиден тип или нет
     """
-    if event_type == 'п' or event_type == 'е':
+    if event_type in ('п', 'е'):
         return True
     return False
 
@@ -307,7 +304,7 @@ def create_counter():
     """
     i = 0
 
-    def foo():
+    def inc():
         """
         Функция, которая увеличивает значение i на единицу
         :return: int
@@ -316,12 +313,13 @@ def create_counter():
         i += 1
         return i
 
-    return foo
+    return inc
 
 
 def schedule_date_limitation(date):
     """
-    Проверка, входит ли введённая пользователем дата расписания в одну неделю, считая от сегодняшнего дня
+    Проверка, входит ли введённая пользователем дата расписания
+    в одну неделю, считая от сегодняшнего дня
     :param date: str - дата, введённая пользователем
     :return: bool - входит или не входит
     """
@@ -332,12 +330,12 @@ def schedule_date_limitation(date):
     return False
 
 
-def create_tasks_table():
+def create_tasks_table(db):
     """
     Создание таблицы tasks в БД
     :return: None
     """
-    connect = sqlite3.connect("project.db")
+    connect = sqlite3.connect(db)
     cursor = connect.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS tasks(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -349,12 +347,12 @@ def create_tasks_table():
     connect.close()
 
 
-def create_events_table():
+def create_events_table(db):
     """
     Создание таблицы events в БД
     :return: None
     """
-    connect = sqlite3.connect("project.db")
+    connect = sqlite3.connect(db)
     cursor = connect.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS events(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -366,3 +364,58 @@ def create_events_table():
         )""")
     connect.commit()
     connect.close()
+
+
+def display_del_add_view_task():
+    """
+    Функция, которая выводит кнопки взаимодействия с заданиями
+    :return: telebot.types.ReplyKeyboardMarkup
+    """
+    keyboard = types.ReplyKeyboardMarkup(row_width=2,
+                                         resize_keyboard=True, one_time_keyboard=True)
+    removal = types.KeyboardButton(text="Удалить задание")
+    adding = types.KeyboardButton(text="Добавить задание")
+    view = types.KeyboardButton(text="Посмотреть задания")
+    keyboard.add(removal, adding, view)
+    return keyboard
+
+
+def display_del_add_view_event():
+    """
+    Функция, которая выводит кнопки взаимодействия с событиями
+    :return: telebot.types.ReplyKeyboardMarkup
+    """
+    keyboard = types.ReplyKeyboardMarkup(row_width=2,
+                                         resize_keyboard=True, one_time_keyboard=True)
+    removal = types.KeyboardButton(text='Удалить событие из расписания')
+    adding = types.KeyboardButton(text='Добавить событие в расписание')
+    view = types.KeyboardButton(text='Посмотреть расписание')
+    keyboard.add(removal, adding, view)
+    return keyboard
+
+
+def display_schedule_tasks_buttons():
+    """
+    Функция, которая выводит кнопки "Задания" и "Расписание"
+    :return: telebot.types.ReplyKeyboardMarkup
+    """
+    keyboard = types.ReplyKeyboardMarkup(row_width=2,
+                                         resize_keyboard=True, one_time_keyboard=True)
+    timetable = types.KeyboardButton(text='Расписание')
+    task = types.KeyboardButton(text='Задания')
+    keyboard.add(timetable, task)
+    return keyboard
+
+
+def create_users_table(db):
+    """
+    Создание таблицы users в БД
+    :return: None
+    """
+    connect = sqlite3.connect(db)
+    cursor = connect.cursor()
+    cursor.execute("""CREATE TABLE IF NOT EXISTS users(
+                user_id INTEGER PRIMARY KEY 
+            )""")
+    connect.commit()
+    cursor.close()
