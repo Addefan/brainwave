@@ -208,19 +208,16 @@ def user_registration(message):
     """
     create_users_table("project.db")
 
-    connect = sqlite3.connect('project.db')
-    cursor = connect.cursor()
-    user_id = message.chat.id
-    cursor.execute(f"SELECT user_id FROM users WHERE user_id = {user_id}")
-    data = cursor.fetchone()
-    if data is None:
-        user_id = (user_id,)
-        cursor.execute("INSERT INTO users VALUES(?);", user_id)
-        connect.commit()
-        bot.send_message(message.chat.id, get_greeting_text())
-    else:
-        bot.send_message(message.chat.id, "Вы уже зарегистрированы!")
-    cursor.close()
+    with working_with_db("project.db") as cursor:
+        user_id = message.chat.id
+        cursor.execute(f"SELECT user_id FROM users WHERE user_id = {user_id}")
+        data = cursor.fetchone()
+        if data is None:
+            user_id = (user_id,)
+            cursor.execute("INSERT INTO users VALUES(?);", user_id)
+            bot.send_message(message.chat.id, get_greeting_text())
+        else:
+            bot.send_message(message.chat.id, "Вы уже зарегистрированы!")
 
 
 def date_to_datetime(date):
