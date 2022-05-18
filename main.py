@@ -14,7 +14,7 @@ from services import user_registration, date_to_timestamp, date_view, \
     get_text_limit_exceeded, request_enter_number_event, request_enter_deletion_type, \
     get_text_successfully_deletion_event, get_text_successfully_deletion_events, \
     create_events_table, display_del_add_view_task, display_schedule_tasks_buttons, \
-    create_tasks_table, display_del_add_view_event, date_to_datetime
+    create_tasks_table, display_del_add_view_event, date_to_datetime, working_with_db
 
 load_dotenv()
 
@@ -59,25 +59,21 @@ def second_remove_event_helper(message, date):
                          reply_markup=display_schedule_tasks_buttons())
         return
 
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
-    begin_day = date_to_timestamp(date_to_datetime(date))
-    day_in_seconds = 86400
-    end_day = begin_day + day_in_seconds - 1
-    cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND start_date >= {begin_day} "
-                   f"AND start_date <= {end_day} ORDER BY start_date;")
-    for _ in range(int(number)):
-        event = cursor.fetchone()
-    if event[4] is None:
-        cursor.execute(f"DELETE FROM events WHERE id = {event[0]};")
-        connect.commit()
-        cursor.close()
-        bot.send_message(user_id, get_text_successfully_deletion_event(),
-                         reply_markup=display_schedule_tasks_buttons())
-    else:
-        cursor.close()
-        sent = bot.reply_to(message, request_enter_deletion_type())
-        bot.register_next_step_handler(sent, third_remove_event_helper, event)
+    with working_with_db("project.db") as cursor:
+        begin_day = date_to_timestamp(date_to_datetime(date))
+        day_in_seconds = 86400
+        end_day = begin_day + day_in_seconds - 1
+        cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND "
+                       f"start_date BETWEEN {begin_day} AND {end_day} ORDER BY start_date;")
+        for _ in range(int(number)):
+            event = cursor.fetchone()
+        if event[4] is None:
+            cursor.execute(f"DELETE FROM events WHERE id = {event[0]};")
+            bot.send_message(user_id, get_text_successfully_deletion_event(),
+                             reply_markup=display_schedule_tasks_buttons())
+        else:
+            sent = bot.reply_to(message, request_enter_deletion_type())
+            bot.register_next_step_handler(sent, third_remove_event_helper, event)
 
 
 def third_remove_event_helper(message, prev_event):
@@ -92,42 +88,38 @@ def third_remove_event_helper(message, prev_event):
 
     create_events_table("project.db")
 
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
-    if deletion_type == 'е':
-        cursor.execute(f"DELETE FROM events WHERE id = {prev_event[0]};")
-        connect.commit()
-        bot.send_message(user_id, get_text_successfully_deletion_event(),
-                         reply_markup=display_schedule_tasks_buttons())
-    else:
-        diff = 0
-        event = prev_event
-        while event is not None:
-            cursor.execute(f"DELETE FROM events WHERE id = {event[0]};")
-            diff += event[4]
-            cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND "
-                           f"description = '{event[1]}' AND start_date = {prev_event[2] + diff} "
-                           f"AND end_date = {prev_event[3] + diff} AND period = {event[4]}")
-            event = cursor.fetchone()
+    with working_with_db("project.db") as cursor:
+        if deletion_type == 'е':
+            cursor.execute(f"DELETE FROM events WHERE id = {prev_event[0]};")
+            bot.send_message(user_id, get_text_successfully_deletion_event(),
+                             reply_markup=display_schedule_tasks_buttons())
+        else:
+            diff = 0
+            event = prev_event
+            while event is not None:
+                cursor.execute(f"DELETE FROM events WHERE id = {event[0]};")
+                diff += event[4]
+                cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND "
+                               f"description = '{event[1]}' AND start_date = {prev_event[2] + diff} "
+                               f"AND end_date = {prev_event[3] + diff} AND period = {event[4]}")
+                event = cursor.fetchone()
 
-        event = tuple(list(prev_event)[1:])
-        cursor.execute("INSERT INTO events VALUES(null, ?, ?, ?, ?, ?);", event)
-        cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND "
-                       f"description = '{event[0]}'  AND start_date = {event[1]} "
-                       f"AND end_date = {event[2]} AND period = {event[3]}")
-        event = cursor.fetchone()
-        diff = 0
-        while event is not None:
-            cursor.execute(f"DELETE FROM events WHERE id = {event[0]};")
-            diff += event[4]
+            event = tuple(list(prev_event)[1:])
+            cursor.execute("INSERT INTO events VALUES(null, ?, ?, ?, ?, ?);", event)
             cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND "
-                           f"description = '{event[1]}' AND start_date = {prev_event[2] - diff} "
-                           f"AND end_date = {prev_event[3] - diff} AND period = {event[4]}")
+                           f"description = '{event[0]}'  AND start_date = {event[1]} "
+                           f"AND end_date = {event[2]} AND period = {event[3]}")
             event = cursor.fetchone()
-        connect.commit()
-        bot.send_message(user_id, get_text_successfully_deletion_events(),
-                         reply_markup=display_schedule_tasks_buttons())
-    cursor.close()
+            diff = 0
+            while event is not None:
+                cursor.execute(f"DELETE FROM events WHERE id = {event[0]};")
+                diff += event[4]
+                cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND "
+                               f"description = '{event[1]}' AND start_date = {prev_event[2] - diff} "
+                               f"AND end_date = {prev_event[3] - diff} AND period = {event[4]}")
+                event = cursor.fetchone()
+            bot.send_message(user_id, get_text_successfully_deletion_events(),
+                             reply_markup=display_schedule_tasks_buttons())
 
 
 @bot.message_handler(regexp="Добавить событие в расписание")
@@ -178,26 +170,26 @@ def second_add_event_helper(message, description, start_date, end_date):
 
     start_date = date_to_datetime(start_date)
     end_date = date_to_datetime(end_date)
-    period = timedelta(int(period)).total_seconds()
+    if event_type == "п":
+        period = timedelta(int(period)).total_seconds()
 
     # Добавление события в db
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
-    if event_type == 'п':
-        diff = 0
-        limit = start_date + timedelta(days=7)
-        while start_date + timedelta(seconds=diff) < limit:
-            event = description, date_to_timestamp(start_date + timedelta(seconds=diff)), \
-                    date_to_timestamp(end_date + timedelta(seconds=diff)), \
-                    period, user_id
-            cursor.execute("INSERT INTO events VALUES(null, ?, ?, ?, ?, ?);", event)
-            diff += period
-    else:
-        event = description, date_to_timestamp(start_date), \
-                date_to_timestamp(end_date), user_id
-        cursor.execute("INSERT INTO events VALUES(null, ?, ?, ?, null, ?);", event)
-    connect.commit()
-    connect.close()
+    with working_with_db("project.db") as cursor:
+        if event_type == 'п':
+            diff = 0
+            limit = start_date + timedelta(days=7)
+            while start_date + timedelta(seconds=diff) < limit:
+                event = description, date_to_timestamp(start_date + timedelta(seconds=diff)), \
+                        date_to_timestamp(end_date + timedelta(seconds=diff)), \
+                        period, user_id
+                cursor.execute("INSERT INTO events VALUES(null, ?, ?, ?, ?, ?);", event)
+                # timer_until_reminder(event[1], event[0])
+                diff += period
+        else:
+            event = description, date_to_timestamp(start_date), \
+                    date_to_timestamp(end_date), user_id
+            cursor.execute("INSERT INTO events VALUES(null, ?, ?, ?, null, ?);", event)
+            # timer_until_reminder(event[1], event[0])
 
     bot.send_message(user_id, get_text_successfully_adding_event(),
                      reply_markup=display_schedule_tasks_buttons())
@@ -225,27 +217,24 @@ def view_schedule_helper(message):
 
     create_events_table("project.db")
 
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
-    begin_day = date_to_timestamp(date_to_datetime(date))
-    day_in_seconds = 86400
-    end_day = begin_day + day_in_seconds - 1
-    cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND start_date >= {begin_day} "
-                   f"AND start_date <= {end_day} ORDER BY start_date;")
-    events = cursor.fetchall()
-    counter = create_counter()
-    out = ""
-    for event in events:
-        out += f"{counter()}) {date_view(event[2], 'time')}-" \
-               f"{date_view(event[3], 'time')} {event[1]}\n"
-    if out == "":
-        cursor.close()
-        bot.send_message(user_id, get_text_no_events_on_this_day(),
-                         reply_markup=display_schedule_tasks_buttons())
-        return 0
-    out = f"Расписание на {date_view(events[0][2], 'date')}:\n" + out
-    bot.send_message(user_id, out, reply_markup=display_schedule_tasks_buttons())
-    cursor.close()
+    with working_with_db("project.db") as cursor:
+        begin_day = date_to_timestamp(date_to_datetime(date))
+        day_in_seconds = 86400
+        end_day = begin_day + day_in_seconds - 1
+        cursor.execute(f"SELECT * FROM events WHERE user_id = {user_id} AND start_date >= {begin_day} "
+                       f"AND start_date <= {end_day} ORDER BY start_date;")
+        events = cursor.fetchall()
+        counter = create_counter()
+        out = ""
+        for event in events:
+            out += f"{counter()}) {date_view(event[2], 'time')}-" \
+                   f"{date_view(event[3], 'time')} {event[1]}\n"
+        if out == "":
+            bot.send_message(user_id, get_text_no_events_on_this_day(),
+                             reply_markup=display_schedule_tasks_buttons())
+            return 0
+        out = f"Расписание на {date_view(events[0][2], 'date')}:\n" + out
+        bot.send_message(user_id, out, reply_markup=display_schedule_tasks_buttons())
 
 
 @bot.message_handler(func=lambda message: message.text == "Задания")
@@ -257,22 +246,22 @@ def display_tasks_buttons(message):
 @bot.message_handler(regexp="Удалить задание")
 def remove_task(message):
     user_id = message.chat.id
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
+
     create_tasks_table("project.db")
-    cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
-    tasks = cursor.fetchall()
-    counter = create_counter()
-    out = ""
-    for task in tasks:
-        out += f"{counter()}. {task[1]} (до {date_view(task[2], 'date')})\n"
-    if out == "":
-        bot.send_message(user_id, get_text_no_tasks(),
-                         reply_markup=display_schedule_tasks_buttons())
-        return
-    else:
-        bot.send_message(user_id, out)
-    cursor.close()
+
+    with working_with_db("project.db") as cursor:
+        cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
+        tasks = cursor.fetchall()
+        counter = create_counter()
+        out = ""
+        for task in tasks:
+            out += f"{counter()}. {task[1]} (до {date_view(task[2], 'date')})\n"
+        if out == "":
+            bot.send_message(user_id, get_text_no_tasks(),
+                             reply_markup=display_schedule_tasks_buttons())
+            return
+        else:
+            bot.send_message(user_id, out)
 
     sent = bot.reply_to(message, request_enter_number_task())
     bot.register_next_step_handler(sent, remove_task_helper)
@@ -288,14 +277,11 @@ def remove_task_helper(message):
                          reply_markup=display_schedule_tasks_buttons())
         return
 
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
-    cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
-    for _ in range(int(number)):
-        task = cursor.fetchone()
-    cursor.execute(f"DELETE FROM tasks WHERE id = {task[0]};")
-    connect.commit()
-    connect.close()
+    with working_with_db("project.db") as cursor:
+        cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
+        for _ in range(int(number)):
+            task = cursor.fetchone()
+        cursor.execute(f"DELETE FROM tasks WHERE id = {task[0]};")
 
     bot.send_message(user_id, get_text_successfully_deletion_task(),
                      reply_markup=display_schedule_tasks_buttons())
@@ -321,12 +307,9 @@ def add_task_helper(message):
     create_tasks_table("project.db")
 
     # Добавление задания в db
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
-    task = description, date_to_timestamp(date_to_datetime(deadline)), user_id
-    cursor.execute("INSERT INTO tasks VALUES(null, ?, ?, ?);", task)
-    connect.commit()
-    connect.close()
+    with working_with_db("project.db") as cursor:
+        task = description, date_to_timestamp(date_to_datetime(deadline)), user_id
+        cursor.execute("INSERT INTO tasks VALUES(null, ?, ?, ?);", task)
 
     bot.send_message(user_id, get_text_successfully_adding_task(),
                      reply_markup=display_schedule_tasks_buttons())
@@ -352,41 +335,38 @@ def view_tasks_helper(message):
 
     date = date_to_timestamp(date_to_datetime(deadline))
 
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
-    cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
-    tasks = cursor.fetchall()
-    counter = create_counter()
-    out = ""
-    for task in tasks:
-        if int(date) >= task[2]:
-            out += f"{counter()}. {task[1]} (до {date_view(task[2], 'date')})\n"
-    if out == "":
-        bot.send_message(user_id, get_text_no_tasks_until_deadline(),
-                         reply_markup=display_schedule_tasks_buttons())
-    else:
-        bot.send_message(user_id, out, reply_markup=display_schedule_tasks_buttons())
-    cursor.close()
+    with working_with_db("project.db") as cursor:
+        cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
+        tasks = cursor.fetchall()
+        counter = create_counter()
+        out = ""
+        for task in tasks:
+            if int(date) >= task[2]:
+                out += f"{counter()}. {task[1]} (до {date_view(task[2], 'date')})\n"
+        if out == "":
+            bot.send_message(user_id, get_text_no_tasks_until_deadline(),
+                             reply_markup=display_schedule_tasks_buttons())
+        else:
+            bot.send_message(user_id, out, reply_markup=display_schedule_tasks_buttons())
 
 
 @bot.message_handler(commands=["delete"])
 def delete(message):
     # "Удаление" пользователя: удаление всех данных, связанных с id пользователя
     user_id = message.chat.id
-    connect = sqlite3.connect("project.db")
-    cursor = connect.cursor()
-    cursor.execute(f"DELETE FROM users WHERE user_id = {user_id}")
-    try:
-        cursor.execute(f"DELETE FROM tasks WHERE user_id = {user_id}")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute(f"DELETE FROM events WHERE user_id = {user_id}")
-    except sqlite3.OperationalError:
-        pass
-    connect.commit()
+
+    with working_with_db("project.db") as cursor:
+        cursor.execute(f"DELETE FROM users WHERE user_id = {user_id}")
+        try:
+            cursor.execute(f"DELETE FROM tasks WHERE user_id = {user_id}")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute(f"DELETE FROM events WHERE user_id = {user_id}")
+        except sqlite3.OperationalError:
+            pass
+
     bot.send_message(user_id, get_thanks_text())
-    cursor.close()
 
 
 print("Bot started working...")

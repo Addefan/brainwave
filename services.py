@@ -1,4 +1,5 @@
 from os import environ
+from contextlib import contextmanager
 import sqlite3
 import datetime
 import telebot
@@ -335,16 +336,13 @@ def create_tasks_table(db):
     Создание таблицы tasks в БД
     :return: None
     """
-    connect = sqlite3.connect(db)
-    cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS tasks(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            description TEXT,
-            deadline TIMESTAMP,
-            user_id INTEGER
-        )""")
-    connect.commit()
-    connect.close()
+    with working_with_db("project.db") as cursor:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS tasks(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                description TEXT,
+                deadline TIMESTAMP,
+                user_id INTEGER
+            )""")
 
 
 def create_events_table(db):
@@ -352,18 +350,15 @@ def create_events_table(db):
     Создание таблицы events в БД
     :return: None
     """
-    connect = sqlite3.connect(db)
-    cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS events(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            description TEXT,
-            start_date TIMESTAMP,
-            end_date TIMESTAMP,
-            period TIMESTAMP, 
-            user_id INTEGER
-        )""")
-    connect.commit()
-    connect.close()
+    with working_with_db("project.db") as cursor:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS events(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                description TEXT,
+                start_date TIMESTAMP,
+                end_date TIMESTAMP,
+                period TIMESTAMP, 
+                user_id INTEGER
+            )""")
 
 
 def display_del_add_view_task():
@@ -412,10 +407,21 @@ def create_users_table(db):
     Создание таблицы users в БД
     :return: None
     """
+    with working_with_db(db) as cursor:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS users(
+                    user_id INTEGER PRIMARY KEY 
+                )""")
+
+
+@contextmanager
+def working_with_db(db):
+    """
+    Контекстный менеджер для работы с базой данных
+    :param db: str - название базы данных
+    :return: sqlite3.Cursor - курсор для работы с базой данных
+    """
     connect = sqlite3.connect(db)
     cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS users(
-                user_id INTEGER PRIMARY KEY 
-            )""")
+    yield cursor
     connect.commit()
-    cursor.close()
+    connect.close()
