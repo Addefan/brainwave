@@ -1,5 +1,6 @@
 from os import environ
 from contextlib import contextmanager
+from time import time
 import sqlite3
 import datetime
 import telebot
@@ -422,3 +423,14 @@ def working_with_db(db):
     yield cursor
     connect.commit()
     connect.close()
+
+
+def delete_obsolete_tasks():
+    """
+    Функция, удаляющая задания, срок которых истёк
+    :return: None
+    """
+    now = datetime.datetime.combine(datetime.datetime.now().date(), datetime.time())
+    now = date_to_timestamp(now)
+    with working_with_db("project.db") as cursor:
+        cursor.execute(f"DELETE FROM tasks WHERE deadline < {now}")

@@ -236,6 +236,7 @@ def remove_task(message):
     user_id = message.chat.id
 
     services.create_tasks_table("project.db")
+    services.delete_obsolete_tasks()
 
     with services.working_with_db("project.db") as cursor:
         cursor.execute(f"SELECT * FROM tasks WHERE user_id = {user_id} ORDER BY deadline;")
@@ -293,6 +294,7 @@ def add_task_helper(message):
         return
 
     services.create_tasks_table("project.db")
+    services.delete_obsolete_tasks()
 
     # Добавление задания в db
     with services.working_with_db("project.db") as cursor:
@@ -320,6 +322,7 @@ def view_tasks_helper(message):
         return
 
     services.create_tasks_table("project.db")
+    services.delete_obsolete_tasks()
 
     date = services.date_to_timestamp(services.date_to_datetime(deadline))
 
