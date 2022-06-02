@@ -1,4 +1,6 @@
 from os import environ
+from contextlib import contextmanager
+from time import time
 import sqlite3
 import datetime
 import telebot
@@ -207,19 +209,16 @@ def user_registration(message):
     """
     create_users_table("project.db")
 
-    connect = sqlite3.connect('project.db')
-    cursor = connect.cursor()
-    user_id = message.chat.id
-    cursor.execute(f"SELECT user_id FROM users WHERE user_id = {user_id}")
-    data = cursor.fetchone()
-    if data is None:
-        user_id = (user_id,)
-        cursor.execute("INSERT INTO users VALUES(?);", user_id)
-        connect.commit()
-        bot.send_message(message.chat.id, get_greeting_text())
-    else:
-        bot.send_message(message.chat.id, "Вы уже зарегистрированы!")
-    cursor.close()
+    with working_with_db("project.db") as cursor:
+        user_id = message.chat.id
+        cursor.execute(f"SELECT user_id FROM users WHERE user_id = {user_id}")
+        data = cursor.fetchone()
+        if data is None:
+            user_id = (user_id,)
+            cursor.execute("INSERT INTO users VALUES(?);", user_id)
+            bot.send_message(message.chat.id, get_greeting_text())
+        else:
+            bot.send_message(message.chat.id, "Вы уже зарегистрированы!")
 
 
 def date_to_datetime(date):
@@ -335,16 +334,13 @@ def create_tasks_table(db):
     Создание таблицы tasks в БД
     :return: None
     """
-    connect = sqlite3.connect(db)
-    cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS tasks(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            description TEXT,
-            deadline TIMESTAMP,
-            user_id INTEGER
-        )""")
-    connect.commit()
-    connect.close()
+    with working_with_db("project.db") as cursor:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS tasks(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                description TEXT,
+                deadline TIMESTAMP,
+                user_id INTEGER
+            )""")
 
 
 def create_events_table(db):
@@ -352,18 +348,15 @@ def create_events_table(db):
     Создание таблицы events в БД
     :return: None
     """
-    connect = sqlite3.connect(db)
-    cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS events(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            description TEXT,
-            start_date TIMESTAMP,
-            end_date TIMESTAMP,
-            period TIMESTAMP, 
-            user_id INTEGER
-        )""")
-    connect.commit()
-    connect.close()
+    with working_with_db("project.db") as cursor:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS events(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                description TEXT,
+                start_date TIMESTAMP,
+                end_date TIMESTAMP,
+                period TIMESTAMP, 
+                user_id INTEGER
+            )""")
 
 
 def display_del_add_view_task():
@@ -412,10 +405,32 @@ def create_users_table(db):
     Создание таблицы users в БД
     :return: None
     """
+    with working_with_db(db) as cursor:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS users(
+                    user_id INTEGER PRIMARY KEY 
+                )""")
+
+
+@contextmanager
+def working_with_db(db):
+    """
+    Контекстный менеджер для работы с базой данных
+    :param db: str - название базы данных
+    :return: sqlite3.Cursor - курсор для работы с базой данных
+    """
     connect = sqlite3.connect(db)
     cursor = connect.cursor()
-    cursor.execute("""CREATE TABLE IF NOT EXISTS users(
-                user_id INTEGER PRIMARY KEY 
-            )""")
+    yield cursor
     connect.commit()
-    cursor.close()
+    connect.close()
+
+
+def delete_obsolete_tasks():
+    """
+    Функция, удаляющая задания, срок которых истёк
+    :return: None
+    """
+    now = datetime.datetime.combine(datetime.datetime.now().date(), datetime.time())
+    now = date_to_timestamp(now)
+    with working_with_db("project.db") as cursor:
+        cursor.execute(f"DELETE FROM tasks WHERE deadline < {now}")
