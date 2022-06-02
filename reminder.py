@@ -3,7 +3,7 @@ from time import time, sleep
 from math import ceil
 import telebot
 from dotenv import load_dotenv
-from services import working_with_db
+from services import working_with_db, create_events_table
 
 load_dotenv()
 
@@ -17,6 +17,7 @@ def reminder():
     После этого убирает событие с текущего дня и переносит на период вперёд
     :return: None
     """
+    create_events_table("project.db")
     with working_with_db("project.db") as cursor:
         current_time = int(time())
         cursor.execute(f"SELECT * FROM events WHERE start_date - {current_time} "
@@ -47,6 +48,7 @@ def send_reminder(description):
 
 
 if __name__ == "__main__":
+    print("Напоминатель событий включен...")
     while True:
         reminder()
         sleep(1)
